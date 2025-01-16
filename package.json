@@ -1,0 +1,16 @@
+{
+  "name": "first_express_api",
+  "version": "1.0.0",
+  "description": "my_first_express_api",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "wilimaxs",
+  "license": "ISC",
+  "dependencies": {
+    "bcrypt": "^5.1.1",
+    "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.2"
+  }
+}
