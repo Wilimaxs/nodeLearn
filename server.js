@@ -2,6 +2,7 @@ const express = require("express");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
 const app = express();
+const mysql = require("mysql2");
 
 // Initialize
 const port = process.env.port || 3000;
@@ -74,6 +75,23 @@ app.delete("/items/:id", (req, res) => {
 
 // AUTH EXAMPLE
 
+// configuration database
+const db = mysql.createConnection({
+  host: "localhost",
+  user: "root",
+  password: "",
+  database: "node_learn",
+});
+
+// test connection
+db.connect((err) => {
+  if (err) {
+    console.log("error connection: ", err);
+    return;
+  }
+  console.log("connection success");
+});
+
 // secret Key for Auth
 const secretKey = "4Fn5T7k8Lm9P2X1Rf6Yz3Qj0Wc4As8Mv";
 
@@ -92,37 +110,111 @@ const users = [
 ];
 
 // fungction for cek user and cek password with hasing
-function authenticateUser(username, password) {
-  const user = users.find((user) => user.username === username);
-  if (!user) {
-    return null; // User not found
-  }
+async function authenticateUser(username, password) {
+  // WITH DATABASE LOKAL
+  const query = "SELECT * FROM users WHERE username = ?";
+  return new Promise((resolve, reject) => {
+    db.query(query, [username], (err, results) => {
+      if (err) {
+        console.error("error auth: ", err);
+        return reject(err);
+      }
+      const user = results[0];
+      if (bcrypt.compareSync(password, user.password)) {
+        return resolve(user);
+      }
+      return resolve(null);
+    });
+  });
 
-  if (bcrypt.compareSync(password, user.password)) {
-    return user; // Password is correct
-  }
+  // WITH MANUAALYY DATA
 
-  return null; // Password is incorrect
+  // const user = users.find((user) => user.username === username);
+  // if (!user) {
+  //   return null; // User not found
+  // }
+
+  // if (bcrypt.compareSync(password, user.password)) {
+  //   return user; // Password is correct
+  // }
+
+  // return null; // Password is incorrect
 }
 
-// route
-app.post("/auth/login", (req, res) => {
-  const { username, password } = req.body;
-  const user = authenticateUser(username, password);
+// route login
+app.post("/auth/login", async (req, res) => {
+  try {
+    const { username, password } = req.body;
 
-  if (!user) {
-    return res.status(401).json({ error: "Authentication failed" });
+    // CODE IF USE DATA LOKAL
+
+    // const user = authenticateUser(username, password);
+    // console.log(user);
+    // if (!user) {
+    //   return res.status(401).json({ error: "Authentication failed" });
+    // } else {
+    //   console.log("User authenticated:", user);
+    // }
+
+    // CODE IF USE DATABASE LOKAL
+    // Tunggu hasil dari authenticateUser
+    const user = await authenticateUser(username, password);
+    if (!user) {
+      return res.status(401).json({ error: "Authentication failed" });
+    }
+
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      secretKey,
+      {
+        expiresIn: "1h", // Token expiration time
+      }
+    ); //token is embedd in token so that token use for authorization it can be know about aserId, username, secretkey, and expiration
+    res.json({ token });
+  } catch (error) {
+    console.error("Error In Auth/Login: ", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+// Route untuk registrasi user baru
+app.post("/auth/register", async (req, res) => {
+  const { username, password } = req.body;
+
+  // Validasi input
+  if (!username || !password) {
+    return res
+      .status(400)
+      .json({ error: "Username and password are required" });
   }
 
-  const token = jwt.sign(
-    { userId: user.id, username: user.username },
-    secretKey,
-    {
-      expiresIn: "1h", // Token expiration time
+  // Periksa apakah username sudah ada
+  const checkUserQuery = "SELECT * FROM users WHERE username = ?";
+  db.query(checkUserQuery, [username], (err, results) => {
+    if (err) {
+      console.error("Error checking user:", err);
+      return res.status(500).json({ error: "Internal server error" });
     }
-  ); //token is embedd in token so that token use for authorization it can be know about aserId, username, secretkey, and expiration
 
-  res.json({ token });
+    if (results.length > 0) {
+      return res.status(400).json({ error: "Username already exists" });
+    }
+
+    // Hash password
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    // Simpan user baru ke database
+    const insertUserQuery =
+      "INSERT INTO users (username, password) VALUES (?, ?)";
+    db.query(insertUserQuery, [username, hashedPassword], (err, results) => {
+      if (err) {
+        console.error("Error inserting user:", err);
+        return res.status(500).json({ error: "Internal server error" });
+      }
+
+      res.status(201).json({ message: "User registered successfully" });
+    });
+  });
 });
 
 // secure header for request
